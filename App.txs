@@ -1,0 +1,330 @@
+import { useState } from "react";
+import "./App.css";
+
+type Message = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+type Memory = {
+  id: number;
+  memory_type: string;
+  content: string;
+  importance: number;
+};
+
+type Page = "chat" | "memory";
+
+function App() {
+  const [page, setPage] = useState<Page>("chat");
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      role: "assistant",
+      content: "Hello. I'm THOW. How can I help?",
+    },
+  ]);
+
+  const [memories, setMemories] = useState<Memory[]>([]);
+  const [memoryLoading, setMemoryLoading] = useState(false);
+  const [memoryError, setMemoryError] = useState("");
+
+  async function sendMessage() {
+    const text = message.trim();
+
+    if (!text || loading) {
+      return;
+    }
+
+    setMessages((current) => [
+      ...current,
+      {
+        role: "user",
+        content: text,
+      },
+    ]);
+
+    setMessage("");
+    setLoading(true);
+
+    try {
+      const response = await fetch(
+        "http://127.0.0.1:8000/chat",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message: text,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error("THOW backend returned an error.");
+      }
+
+      const data = await response.json();
+
+      setMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          content: data.response,
+        },
+      ]);
+    } catch {
+      setMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          content:
+            "I couldn't connect to my backend. Make sure THOW's Python server is running.",
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadMemories() {
+    setMemoryLoading(true);
+    setMemoryError("");
+
+    try {
+      const response = await fetch(
+        "http://127.0.0.1:8000/memories",
+      );
+
+      if (!response.ok) {
+        throw new Error("Could not load memories.");
+      }
+
+      const data = await response.json();
+
+      setMemories(data.memories);
+    } catch {
+      setMemoryError(
+        "I couldn't load THOW's memories.",
+      );
+    } finally {
+      setMemoryLoading(false);
+    }
+  }
+
+  function openChat() {
+    setPage("chat");
+    setMenuOpen(false);
+  }
+
+  function openMemory() {
+    setPage("memory");
+    setMenuOpen(false);
+    loadMemories();
+  }
+
+  function handleKeyDown(
+    event: React.KeyboardEvent<HTMLTextAreaElement>,
+  ) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
+    }
+  }
+
+  return (
+    <div className="THOW-app">
+      <header className="topbar">
+        <div className="brand">
+          <div className="brand-mark">T</div>
+          <span>THOW</span>
+        </div>
+
+        <div className="status">
+          <span className="status-dot" />
+          Online
+        </div>
+      </header>
+
+      <main className="main">
+        {page === "chat" && (
+          <section className="chat-page">
+            <div className="chat-content">
+              <div className="messages">
+                {messages.map((item, index) => (
+                  <div
+                    key={index}
+                    className={`message-row ${item.role}`}
+                  >
+                    {item.role === "assistant" && (
+                      <div className="avatar">T</div>
+                    )}
+
+                    <div className="message-bubble">
+                      {item.content}
+                    </div>
+                  </div>
+                ))}
+
+                {loading && (
+                  <div className="message-row assistant">
+                    <div className="avatar">T</div>
+
+                    <div className="message-bubble typing">
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="composer">
+                <textarea
+                  value={message}
+                  onChange={(event) =>
+                    setMessage(event.target.value)
+                  }
+                  onKeyDown={handleKeyDown}
+                  placeholder="Message THOW..."
+                  rows={1}
+                  disabled={loading}
+                />
+
+                <button
+                  className="send-button"
+                  onClick={sendMessage}
+                  disabled={
+                    loading || !message.trim()
+                  }
+                >
+                  ↑
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {page === "memory" && (
+          <section className="memory-page">
+            <div className="memory-title">
+              <h2>Memory</h2>
+
+              <button
+                className="refresh-button"
+                onClick={loadMemories}
+                disabled={memoryLoading}
+              >
+                {memoryLoading ? "Loading" : "Refresh"}
+              </button>
+            </div>
+
+            {memoryError && (
+              <div className="memory-error">
+                {memoryError}
+              </div>
+            )}
+
+            {!memoryLoading &&
+              !memoryError &&
+              memories.length === 0 && (
+                <div className="empty-memory">
+                  THOW has no saved memories.
+                </div>
+              )}
+
+            <div className="memory-list">
+              {memories.map((memory) => (
+                <div
+                  className="memory-card"
+                  key={memory.id}
+                >
+                  <div className="memory-card-top">
+                    <span className="memory-type">
+                      {memory.memory_type}
+                    </span>
+
+                    <span className="memory-importance">
+                      {memory.importance}/10
+                    </span>
+                  </div>
+
+                  <p>{memory.content}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+      </main>
+
+      {menuOpen && (
+        <div
+          className="menu-overlay"
+          onClick={() => setMenuOpen(false)}
+        >
+          <nav
+            className="popup-menu"
+            onClick={(event) =>
+              event.stopPropagation()
+            }
+          >
+            <button
+              className="menu-item"
+              onClick={openChat}
+            >
+              <span>💬</span>
+              Chat
+            </button>
+
+            <button
+              className="menu-item"
+              onClick={openMemory}
+            >
+              <span>🧠</span>
+              Memory
+            </button>
+
+            <button className="menu-item">
+              <span>📋</span>
+              Tasks
+            </button>
+
+            <button className="menu-item">
+              <span>🛠️</span>
+              Tools
+            </button>
+
+            <button className="menu-item">
+              <span>📜</span>
+              Activity
+            </button>
+
+            <div className="menu-divider" />
+
+            <button className="menu-item">
+              <span>⚙️</span>
+              Settings
+            </button>
+          </nav>
+        </div>
+      )}
+
+      <button
+        className={`menu-button ${
+          menuOpen ? "open" : ""
+        }`}
+        onClick={() => setMenuOpen(!menuOpen)}
+        aria-label="Open menu"
+      >
+        {menuOpen ? "×" : "☰"}
+      </button>
+    </div>
+  );
+}
+
+export default App;
